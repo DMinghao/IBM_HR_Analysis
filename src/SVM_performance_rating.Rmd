@@ -63,12 +63,35 @@ glimpse(raw_data)
 # Preprocess the data 
 
 ```{R}
+data_droped_unusable_cols <-
+  subset(
+    raw_data,
+    select = -c(
+      Attrition,
+      EmployeeNumber,
+      EnvironmentSatisfaction,
+      JobInvolvement,
+      JobSatisfaction,
+      OverTime,
+      PercentSalaryHike,
+      RelationshipSatisfaction,
+      StockOptionLevel,
+      TrainingTimesLastYear,
+      WorkLifeBalance,
+      YearsAtCompany,
+      YearsInCurrentRole,
+      YearsSinceLastPromotion,
+      YearsWithCurrManager, 
+      Over18, 
+      EmployeeCount, 
+      StandardHours
+    )
+  )
 
-tmp_Attrition <- raw_data$Attrition
-
-data_droped_col <- subset(raw_data, select = -c(Attrition, EmployeeCount, StandardHours, Over18))
-
-data_dummied <- dummy_cols(data_droped_col)
+glimpse(data_droped_unusable_cols)
+```
+```{R}
+data_dummied <- dummy_cols(data_droped_unusable_cols)
 
 data_processed <-
   data_dummied[, sapply(data_dummied, class) != "factor"]
@@ -78,16 +101,44 @@ colnames(data_processed) <- gsub("-", "", colnames(data_processed))
 colnames(data_processed) <- gsub("&", "", colnames(data_processed))
 colnames(data_processed) <- gsub("`", "", colnames(data_processed))
 
-data_processed$Attrition <- tmp_Attrition
+data_processed$PerformanceRating <-
+  as.factor(data_processed$PerformanceRating)
 
 glimpse(data_processed)
+```
+
+```{R}
+processedRating <-
+  as.numeric(as.character(data_processed$PerformanceRating))
+
+hist(processedRating)
+
+rating_3_index <- which(processedRating %in% 3)
+
+mutateable <-
+  rating_3_index[sample(length(rating_3_index), size = length(rating_3_index) /
+                          3 * 2)]
+
+select <- sample(length(mutateable), size = length(mutateable) / 3 * 2)
+
+mutate_2_select <- mutateable[select]
+
+mutate_1_select <- mutateable[-select]
+
+for (x in mutate_2_select) processedRating[x] = 2
+for (x in mutate_1_select) processedRating[x] = 1
+
+hist(processedRating)
+
+data_processed$PerformanceRating <-
+  as.factor(processedRating)
 ```
 
 
 ```{R}
 svm_1 <-
   svm(
-    Attrition ~ .,
+    PerformanceRating ~ .,
     data = data_processed,
     method = "C-classification",
     kernal = "radial",
@@ -96,10 +147,6 @@ svm_1 <-
   )
 
 summary(svm_1)
+plot(svm_1, data_processed)
 ```
 
-```{R}
-svm_1_pred <- predict(svm_1, data_processed)
-
-table(Actual=data_processed$Attrition, Predicted=svm_1_pred)
-```
