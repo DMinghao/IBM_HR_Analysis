@@ -1,1 +1,45 @@
+title: "Project Notebook"
+author: "Claire Zhao"
+output:
+  prettydoc::html_pretty:
+    highlight: github
+    toc: yes
+    toc_depth: 2
+    theme: architect
+  '# prettydoc::html_pretty': default
+  
 
+# set-up
+```{r}
+rm(list = ls())     # clear the workspace 
+library(ISLR)       # load ISLR data package
+library(tidyverse)
+library(ggplot2)
+```
+
+
+# import data（我在本地run的，在github得改成"../data/WA_Fn-UseC_-HR-Employee-Attrition.csv"）
+```{r}
+raw_data <-
+  read.csv(
+    "WA_Fn-UseC_-HR-Employee-Attrition.csv",
+    stringsAsFactors = T,
+    na.strings = '?'
+  )
+names(raw_data)[names(raw_data) == 'ï..Age'] <- 'Age'
+glimpse(raw_data)
+```
+# pre
+
+# Classification Trees
+
+```{r}
+library(rpart)
+library(rpart.plot)
+```
+
+ct_model<-rpart(..................# model formula
+                data=Default,                             # dataset
+                method="class",                           # "class" indicates a classification tree model 
+                control=rpart.control(cp=0.03,maxdepth=4))   # tree control parameters. 
+```
