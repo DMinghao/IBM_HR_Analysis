@@ -1,24 +1,39 @@
-title: "Project Notebook"
-author: "Claire Zhao"
+---
+title: "Credit Card Default"
+Author: "Claire Zhao"
 output:
-  prettydoc::html_pretty:
-    highlight: github
+  word_document:
     toc: yes
-    toc_depth: 2
-    theme: architect
-  '# prettydoc::html_pretty': default
-  
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
 
-# set-up
+#set-up
 ```{r}
-rm(list = ls())     # clear the workspace 
-library(ISLR)       # load ISLR data package
+library(rmarkdown)
+if (!require(kableExtra)) install.packages("kableExtra")
+library(kableExtra)
+library(knitr)
+library(magrittr)
+
 library(tidyverse)
 library(ggplot2)
+library(rpart)
+library(rpart.plot)
+
+if (!require(e1071)) install.packages("e1071")
+library(e1071)
+if (!require(fastDummies)) install.packages("fastDummies")
+library(fastDummies)
+
+if (!require(tree))
+  install.packages('tree')
+library(tree)
 ```
 
 
-# import data（我在本地run的，在github得改成"../data/WA_Fn-UseC_-HR-Employee-Attrition.csv"）
+# import data
 ```{r}
 raw_data <-
   read.csv(
@@ -29,17 +44,60 @@ raw_data <-
 names(raw_data)[names(raw_data) == 'ï..Age'] <- 'Age'
 glimpse(raw_data)
 ```
-# pre
 
-# Classification Trees
-
+# prepare& build the tree
 ```{r}
-library(rpart)
-library(rpart.plot)
+tmp_Attrition <- raw_data$Attrition
+data_droped_col <- subset(raw_data, select = -c(Attrition, EmployeeCount, StandardHours, Over18))
+data_dummied <- dummy_cols(data_droped_col)
+data_processed <-
+  data_dummied[, sapply(data_dummied, class) != "factor"]
+colnames(data_processed) <- gsub(" ", "", colnames(data_processed))
+colnames(data_processed) <- gsub("-", "", colnames(data_processed))
+colnames(data_processed) <- gsub("&", "", colnames(data_processed))
+colnames(data_processed) <- gsub("`", "", colnames(data_processed))
+data_processed$Attrition <- tmp_Attrition
+glimpse(data_processed)
+
+# split sample and test
+train <- sample(1:nrow(data_processed), nrow(data_processed) / 2)
+test <- data_processed[-train,]
+
+#Decision Tree
+# plant a tree
+data.tree <- tree(Attrition ~ ., data = data_processed)
+
+summary(data.tree)
+#+ fig.width=11, fig.height=8
+plot(data.tree)
+text(data.tree, pretty = 0)
+
+data.tree <- tree(Attrition ~ ., data =data_processed, subset = train)
+data.tree.pred = predict(data.tree, test, type = "class")
+
+table(data.tree.pred, test$Attrition)
+mean(data.tree.pred == test$Attrition)
 ```
 
-ct_model<-rpart(..................# model formula
-                data=Default,                             # dataset
-                method="class",                           # "class" indicates a classification tree model 
-                control=rpart.control(cp=0.03,maxdepth=4))   # tree control parameters. 
+# cross validating different trees 
+```{r}
+cv.data <- cv.tree(data.tree, FUN = prune.misclass)
+names(cv.data)
+#+ fig.width=11, fig.height=8
+plot(cv.data)
+cv.data
 ```
+
+# get the best tree
+```{r}
+prune.data <-
+  prune.misclass(data.tree, best = cv.data$size[which.min(cv.data$dev)])
+#+ fig.width=11, fig.height=8
+plot(prune.data)
+text(prune.data, pretty = 0)
+
+prune.data.pred <- predict(prune.data, test, type = "class")
+table(prune.data.pred, test$Attrition)
+mean(prune.data.pred == test$Attrition)
+```
+
