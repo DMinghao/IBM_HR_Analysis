@@ -1,0 +1,51 @@
+---
+title: "Project Notebook"
+author: "Minghao Du"
+output:
+  prettydoc::html_pretty:
+    highlight: github
+    toc: yes
+    toc_depth: 2
+    theme: architect
+  '# prettydoc::html_pretty': default
+---
+
+```{css echo=FALSE}
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&display=swap');
+code{
+  font-family: 'Fira Code'!important;
+}
+```
+```{r echo=FALSE}
+library(rmarkdown)
+if (!require(kableExtra)) install.packages("kableExtra")
+library(kableExtra)
+library(knitr)
+library(magrittr)
+```
+
+# Intro
+
+# Set-up
+Load packages. 
+```{r}
+rm(list = ls())
+if (!require(readxl)) install.packages("readxl")
+library(readxl)
+if (!require(tidyverse)) install.packages("tidyverse")
+library(tidyverse)
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+```
+
+# Import Data
+
+```{R}
+raw_data <-
+  read.csv(
+    "../data/WA_Fn-UseC_-HR-Employee-Attrition.csv",
+    stringsAsFactors = T,
+    na.strings = '?'
+  )
+summary(raw_data)
+```
