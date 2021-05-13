@@ -1,0 +1,90 @@
+###### Random Forest #####
+
+# prepare
+```{r}
+if (!require(randomForest))
+  install.packages("randomForest")
+library(randomForest)
+
+if (!require(randomForestExplainer))
+  install.packages("randomForestExplainer")
+library(randomForestExplainer)
+
+```
+
+# baseline forest
+```{r}
+data.forest <- randomForest(
+ Attrition ~ .,
+  data = data_processed,
+  subset = train,
+  ntree = 5000,
+  importance = T,
+  localImp = T
+)
+data.forest
+plot(data.forest)
+```
+# testing hyper peramiter: mtry
+```{r}
+data.forest <- randomForest(
+  Attrition ~.,
+  data = data_processed,
+  subset = train,
+  ntree = 5000,
+  mtry = ncol(data_processed) - 1,
+  importance = T,
+  localImp = T
+)
+data.forest
+#+ fig.width=11, fig.height=8
+plot(data.forest)
+
+importance(data.forest)
+varImpPlot(data.forest)
+
+data.forest.pred <- predict(data.forest, test, typr = "class")
+table(data.forest.pred, test$Attrition)
+mean(data.forest.pred == test$Attrition)
+
+mtry.list <- c()
+data.forest.final <- NULL
+max <- 0
+for (i in 1:(ncol(data_processed) - 1)) {
+  data.forest.dummy <- randomForest(
+    Attrition ~ .,
+    data = data_processed,
+    subset = train,
+    ntree = 5000,
+    mtry = i,
+    importance = T,
+    localImp = T
+  )
+  val <- predict(data.forest.dummy, test, typr = "class")
+  score <- mean(val == test$Attrition)
+  if (score >= max) {
+    data.forest.final <- data.forest.dummy
+    max <- score
+  }
+  mtry.list[i] <- score
+}
+
+mtry.list
+#+ fig.width=11, fig.height=8
+plot(mtry.list)
+
+data.forest.final
+#+ fig.width=11, fig.height=8
+plot(data.forest.final)
+
+importance(data.forest.final)
+
+#+ fig.width=11, fig.height=8
+varImpPlot(data.forest.final)
+
+data.forest.final.pred <-
+  predict(data.forest.final, test, typr = "class")
+table(data.forest.final.pred, test$Attrition)
+mean(data.forest.final.pred == test$Attrition)
+```
+
