@@ -41,7 +41,10 @@ if (!require(e1071)) install.packages("e1071")
 library(e1071)
 if (!require(fastDummies)) install.packages("fastDummies")
 library(fastDummies)
-
+if (!require(caret)) install.packages("caret")
+library(caret)
+# if (!require(GA)) install.packages("GA")
+# library(GA)
 ```
 
 # Import Data
@@ -83,23 +86,202 @@ data_processed$Attrition <- tmp_Attrition
 glimpse(data_processed)
 ```
 
+```{R}
+set.seed(1)
+
+split <- sample(nrow(data_processed), nrow(data_processed)*0.75)
+
+data_train <- data_processed[split, ]
+data_test <- data_processed[-split, ]
+
+```
 
 ```{R}
 svm_1 <-
   svm(
     Attrition ~ .,
-    data = data_processed,
+    data = data_train,
     method = "C-classification",
-    kernal = "radial",
-    gamma = 0.1,
-    cost = 10
+    kernal = "radial"
   )
 
 summary(svm_1)
 ```
 
 ```{R}
-svm_1_pred <- predict(svm_1, data_processed)
+svm_1_pred <- predict(svm_1, data_test)
 
-table(Actual=data_processed$Attrition, Predicted=svm_1_pred)
+xtab_svm_1 <- table(Actual = data_test$Attrition, Predicted = svm_1_pred)
+
+confusionMatrix(xtab_svm_1)
+```
+
+# Here is where things get interesting 
+
+```{R}
+
+svm_tune <-
+  tune.svm(
+    Attrition ~ .,
+    data = data_train,
+    kernel = "radial",
+    cost = 10 ^ (-10:2),
+    gamma = c(seq(1, 10, 4) %o% 10 ^ (-4:1))
+  )
+# svmProfile <- rfe(data_train[,1:ncol(data_train)-1], data_train$Attrition,
+#                   # sizes = 1:ncol(data_train),
+#                   sizes = ncol(data_train),
+#                   rfeControl = rfeControl(functions = caretFuncs,
+#                                           number = 200),
+#                   ## pass options to train()
+#                   method = "svmRadial")
+
+summary(svm_tune)
+
+```
+
+```{R}
+best_svm_mod <- svm_tune$best.model
+
+svm_best_pred <- predict(best_svm_mod, data_test)
+
+xtab_svm_best <-
+  table(Actual = data_test$Attrition, Predicted = svm_best_pred)
+
+confusionMatrix(xtab_svm_best)
+```
+
+```{R}
+if (!require(tensorflow)) install.packages("tensorflow")
+library(tensorflow)
+
+if (!require(keras)) install.packages("keras")
+library(keras)
+
+install_tensorflow(version = "2.3.0-gpu")
+# install_keras(tensorflow = "gpu")
+
+tf$config$experimental$list_physical_devices()
+
+```
+
+```{R}
+
+data_train_tf <- data_train %>% mutate(Attrition = ifelse(Attrition == "No",0,1))
+data_test_tf <- data_test %>% mutate(Attrition = ifelse(Attrition == "No",0,1))
+
+
+X_train <- data_train_tf %>% select(-Attrition) %>% scale()
+y_train <- to_categorical(data_train_tf$Attrition)
+
+X_test <- data_test_tf %>% select(-Attrition) %>% scale()
+y_test <- to_categorical(data_test_tf$Attrition)
+```
+
+```{R}
+model <- keras_model_sequential()
+
+model %>%
+  layer_dense(
+    units = 1024,
+    activation = 'tanh',
+    input_shape = ncol(X_train)
+  ) %>%
+  layer_dropout(rate = 0.6) %>%
+  layer_dense(units = 512, activation = 'tanh') %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units = 256, activation = 'tanh') %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units = 128, activation = 'sigmoid') %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 2, activation = 'sigmoid')
+
+summary(model)
+
+model %>% compile(
+  loss = 'binary_crossentropy',
+  optimizer = optimizer_adam(
+    lr = 1e-6,
+    beta_1 = 0.99,
+    beta_2 = 0.9999,
+    epsilon = NULL,
+    decay = 1e-7,
+    amsgrad = TRUE,
+    clipnorm = NULL,
+    clipvalue = NULL
+  ),
+  # optimizer = optimizer_sgd(
+  #   lr = 1e-4,
+  #   momentum = 1e-4,
+  #   decay = 1e-4,
+  #   nesterov = FALSE,
+  #   clipnorm = NULL,
+  #   clipvalue = NULL
+  # ),
+  metrics = c('accuracy')
+)
+
+```
+
+```{R}
+history <- model %>% fit(
+  X_train, y_train, 
+  epochs = 200, 
+  batch_size = 5,
+  validation_split = 0.3, 
+  verbose = 2,
+  callback = callback_early_stopping(monitor = "val_loss", patience = 10)
+) 
+
+```
+
+```{R}
+plot(
+  history$metrics$loss,
+  main = "Model Loss",
+  xlab = "epoch",
+  ylab = "loss",
+  col = "orange",
+  type = "l"
+)
+lines(history$metrics$val_loss, col = "skyblue")
+legend(
+  "topright",
+  c("Training", "Testing"),
+  col = c("orange", "skyblue"),
+  lty = c(1, 1)
+)
+
+plot(
+  history$metrics$acc,
+  main = "Model Accuracy",
+  xlab = "epoch",
+  ylab = "accuracy",
+  col = "orange",
+  type = "l"
+)
+lines(history$metrics$val_acc, col = "skyblue")
+legend(
+  "topleft",
+  c("Training", "Testing"),
+  col = c("orange", "skyblue"),
+  lty = c(1, 1)
+)
+```
+
+```{R}
+model %>% evaluate(X_test, y_test)
+predictions <- model %>% predict_classes(X_test)
+xtab_tf <- table(
+  factor(
+    predictions,
+    levels = min(data_test_tf$Attrition):max(data_test_tf$Attrition)
+  ),
+  factor(
+    data_test_tf$Attrition,
+    levels = min(data_test_tf$Attrition):max(data_test_tf$Attrition)
+  )
+)
+
+confusionMatrix(xtab_tf)
 ```
