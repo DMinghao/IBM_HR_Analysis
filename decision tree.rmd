@@ -8,7 +8,6 @@ output:
     number_sections: yes
     toc: yes
 ---
-
 #set-up
 ```{r}
 library(rmarkdown)
@@ -30,11 +29,13 @@ library(fastDummies)
 if (!require(tree))
   install.packages('tree')
 library(tree)
+
 ```
 
 
 # import data
 ```{r}
+set.seed(1)
 raw_data <-
   read.csv(
     "WA_Fn-UseC_-HR-Employee-Attrition.csv",
@@ -72,12 +73,14 @@ summary(data.tree)
 plot(data.tree)
 text(data.tree, pretty = 0)
 
+
 data.tree <- tree(Attrition ~ ., data =data_processed, subset = train)
 data.tree.pred = predict(data.tree, test, type = "class")
 
 table(data.tree.pred, test$Attrition)
 mean(data.tree.pred == test$Attrition)
 ```
+
 
 # cross validating different trees 
 ```{r}
@@ -90,8 +93,7 @@ cv.data
 
 # get the best tree
 ```{r}
-prune.data <-
-  prune.misclass(data.tree, best = cv.data$size[which.min(cv.data$dev)])
+prune.data <-prune.misclass(data.tree, best = cv.data$size[which.min(cv.data$dev)])
 #+ fig.width=11, fig.height=8
 plot(prune.data)
 text(prune.data, pretty = 0)
@@ -100,4 +102,96 @@ prune.data.pred <- predict(prune.data, test, type = "class")
 table(prune.data.pred, test$Attrition)
 mean(prune.data.pred == test$Attrition)
 ```
+#****************************************************************************************************************
+#从这里开始是prof 的方法 ct_model和k-fold
+```{r}
+ct_model<-rpart(Attrition ~.,           # model formula 
+                data=data_processed,                      # dataset
+                method="class",                           # "class" indicates a classification tree model 
+                control=rpart.control(cp=0))  
+rpart.plot(ct_model)   # tree plot
+```
 
+#Get the predicted value - class membership (yes or no) --> using a cut-off of 50%. 
+```{r}
+ct_pred_class<-predict(ct_model,type="class") # class membership (yes or no) 
+head(ct_pred_class)
+
+ct_pred<-predict(ct_model)  # get the predicted values - class probabilities (default)
+head(ct_pred)
+```
+```{r}
+data_processed$ct_pred_prob<-ct_pred[,2]   
+print(ct_model)        # model results 
+```
+```{r}
+summary(ct_model)      # model result details 
+```
+
+#train/test split ：我们的sample size是不是只有1400？所以我觉得这里可能有点问题 but i can‘t figure out
+```{r}
+set.seed(1)   # set a random seed 
+index <- sample(10000, 2000) # random selection of indices. 20%
+index
+```
+
+
+#test & training dataset：这里的varibale being trained我按照之前model写的 不确定！！！！需要铭豪大佬！
+```{r}
+test <- data_processed[index,c("Attrition","Age","OverTime_No","MonthlyIncome","JobRole_SalesExecutive","MaritalStatus_Single","YearsSinceLastPromotion","TotalWorkingYears","JobRole_ResearchScientist","StockOptionLevel","JobSatisfaction","RelationshipSatisfaction")]       
+# save 20% as a test dataset:index
+
+training <-data_processed[-index,c("Attrition","Age","OverTime_No","MonthlyIncome","JobRole_SalesExecutive","MaritalStatus_Single","YearsSinceLastPromotion","TotalWorkingYears","JobRole_ResearchScientist","StockOptionLevel","JobSatisfaction","RelationshipSatisfaction")]   
+# save the rest as a training set:-index 
+
+test
+training
+
+
+```
+
+### build a model with a training set. cp用了0.03
+```{r}
+training_model<-rpart(Attrition ~.,
+                      data=data_processed, 
+                      method="class", 
+                      control=rpart.control(cp=0.03))
+
+rpart.plot(training_model)
+```
+### predicting probabilities/class labels for test data 我这里开始做不下去了所以换了k-fold写
+
+### k-fold Cross-validation，cp用了0
+
+```{r}
+set.seed(1)   # set a random seed 
+full_tree<-rpart(Attrition~.,
+                     data=training, 
+                     method="class",
+                     control=rpart.control(cp=0))  #cp=0, more complex, let the tree grow
+rpart.plot(full_tree)
+```
+```{r}
+printcp(full_tree)   # xerror, xstd - cross validation results  
+```
+```{r}
+plotcp(full_tree)    
+```
+
+```{r}
+min_xerror<-full_tree$cptable[which.min(full_tree$cptable[,"xerror"]),]
+min_xerror
+
+# prune tree with minimum cp value
+min_xerror_tree<-prune(full_tree, cp=min_xerror[1])
+rpart.plot(min_xerror_tree)
+```
+```{r}
+bp_tree<-min_xerror_tree
+test$ct_bp_pred_prob<-predict(bp_tree,test)[,2]
+test$ct_bp_pred_class=ifelse(test$ct_bp_pred_prob>0.5,"Yes","No")
+
+table(test$ct_bp_pred_class==test$Attrition)  # error rate
+
+table(test$ct_bp_pred_class,test$Attrition, dnn=c("predicted","actual"))  # confusion table on test data
+```
