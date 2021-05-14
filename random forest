@@ -1,3 +1,14 @@
+---
+title: "Credit Card Default"
+Author: "Claire Zhao"
+output:
+  word_document:
+    toc: yes
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
+
 ###### Random Forest #####
 
 #set-up
