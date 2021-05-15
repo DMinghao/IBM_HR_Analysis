@@ -2,6 +2,7 @@
 title: "Project Notebook"
 author: "Minghao Du"
 output:
+  github_document: default
   prettydoc::html_pretty:
     highlight: github
     toc: yes
@@ -182,11 +183,7 @@ y_test <- to_categorical(data_test_tf$Attrition)
 model <- keras_model_sequential()
 
 model %>%
-  layer_dense(
-    units = 1024,
-    activation = 'tanh',
-    input_shape = ncol(X_train)
-  ) %>%
+  layer_dense(units = 1024, activation = 'tanh', input_shape = ncol(X_train)) %>%
   layer_dropout(rate = 0.6) %>%
   layer_dense(units = 512, activation = 'tanh') %>%
   layer_dropout(rate = 0.4) %>%
@@ -226,7 +223,7 @@ model %>% compile(
 ```{R}
 history <- model %>% fit(
   X_train, y_train, 
-  epochs = 200, 
+  epochs = 300, 
   batch_size = 5,
   validation_split = 0.3, 
   verbose = 2,

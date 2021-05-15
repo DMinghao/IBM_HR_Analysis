@@ -1,0 +1,323 @@
+---
+title: "Project Notebook"
+author: "Minghao Du"
+output:
+  html_document:
+    toc: yes
+    toc_depth: '2'
+    df_print: paged
+  prettydoc::html_pretty:
+    highlight: github
+    toc: yes
+    toc_depth: 2
+    theme: architect
+  '# prettydoc::html_pretty': default
+  github_document: default
+---
+
+```{css echo=FALSE}
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&display=swap');
+code{
+  font-family: 'Fira Code'!important;
+}
+```
+```{r echo=FALSE}
+library(rmarkdown)
+if (!require(kableExtra)) install.packages("kableExtra")
+library(kableExtra)
+library(knitr)
+library(magrittr)
+```
+
+## Intro
+
+### Set-up
+
+Load packages: 
+```{r}
+rm(list = ls())
+if (!require(readxl)) install.packages("readxl")
+library(readxl)
+if (!require(tidyverse)) install.packages("tidyverse")
+library(tidyverse)
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+
+if (!require(e1071)) install.packages("e1071")
+library(e1071)
+if (!require(fastDummies)) install.packages("fastDummies")
+library(fastDummies)
+if (!require(caret)) install.packages("caret")
+library(caret)
+if (!require(tree)) install.packages('tree')
+library(tree)
+if (!require(rpart)) install.packages('rpart')
+library(rpart)
+library(rpart.plot)
+if (!require(progress)) install.packages("progress")
+library(progress)
+if (!require(randomForest)) install.packages("randomForest")
+library(randomForest)
+if (!require(randomForestExplainer)) install.packages("randomForestExplainer")
+library(randomForestExplainer)
+if (!require(pROC)) install.packages('pROC')
+library(pROC)
+```
+
+### Import Data
+
+```{R}
+raw_data <-
+  read.csv(
+    "../data/WA_Fn-UseC_-HR-Employee-Attrition.csv",
+    stringsAsFactors = T,
+    na.strings = '?'
+  )
+
+names(raw_data)[names(raw_data) == 'ï..Age'] <- 'Age'
+
+glimpse(raw_data)
+```
+
+### Preprocess the data 
+
+```{R}
+
+tmp_Attrition <- raw_data$Attrition
+
+data_droped_col <-
+  subset(raw_data,
+         select = -c(Attrition, EmployeeCount, StandardHours, Over18))
+
+data_dummied <- dummy_cols(data_droped_col)
+
+data_processed <-
+  data_dummied[, sapply(data_dummied, class) != "factor"]
+
+colnames(data_processed) <- gsub(" ", "", colnames(data_processed))
+colnames(data_processed) <- gsub("-", "", colnames(data_processed))
+colnames(data_processed) <- gsub("&", "", colnames(data_processed))
+colnames(data_processed) <- gsub("`", "", colnames(data_processed))
+
+data_processed$Attrition <- tmp_Attrition
+
+glimpse(data_processed)
+```
+
+```{R}
+set.seed(10)
+
+split <- sample(nrow(data_processed), nrow(data_processed) * 0.75)
+
+data_train <- data_processed[split,]
+data_test <- data_processed[-split,]
+
+```
+
+### Understanding the data 
+
+## Modeling 
+
+### Decision Tree
+
+#### build a model with a training set
+```{r}
+training_model <- rpart(Attrition ~ .,
+                        data = data_train,
+                        method = "class")
+
+rpart.plot(training_model)
+```
+
+#### k-fold Cross-validation，cp with 0
+
+```{r}
+full_tree <- rpart(
+  Attrition ~ .,
+  data = data_train,
+  method = "class",
+  control = rpart.control(cp = 0) #cp=0, more complex, let the tree grow
+)  
+rpart.plot(full_tree)
+```
+
+```{r}
+printcp(full_tree)   # xerror, xstd - cross validation results  
+```
+
+```{r}
+plotcp(full_tree)    
+```
+
+```{r}
+min_xerror <-
+  full_tree$cptable[which.min(full_tree$cptable[, "xerror"]), ]
+min_xerror
+
+# prune tree with minimum cp value
+min_xerror_tree <- prune(full_tree, cp = min_xerror[1])
+rpart.plot(min_xerror_tree)
+```
+
+```{r}
+bp_tree <- min_xerror_tree
+data_test$ct_pred_prob <- predict(bp_tree, data_test)[, 2]
+data_test$ct_pred_class <- ifelse(data_test$ct_pred_prob > 0.5, "Yes", "No")
+
+dt_table <-
+  table(data_test$ct_pred_class,
+        data_test$Attrition,
+        dnn = c("predicted", "actual"))
+confusionMatrix(dt_table)
+```
+
+### Random Forest 
+
+#### baseline forest
+```{r}
+data.forest <- randomForest(
+  Attrition ~ .,
+  data = data_train,
+  ntree = 5000,
+  importance = T,
+  localImp = T
+)
+data.forest
+plot(data.forest)
+```
+
+#### testing hyper peramiter: mtry
+```{r}
+data.forest <- randomForest(
+  Attrition ~ .,
+  data = data_train,
+  ntree = 5000,
+  mtry = ncol(data_processed) - 1,
+  importance = T,
+  localImp = T
+)
+data.forest
+#+ fig.width=11, fig.height=8
+plot(data.forest)
+```
+
+```{r}
+importance(data.forest)
+varImpPlot(data.forest)
+```
+
+```{r}
+data.forest.pred <- predict(data.forest, data_test, typr = "class")
+rf_confMtx <- table(data.forest.pred, data_test$Attrition)
+confusionMatrix(rf_confMtx)
+```
+
+```{r}
+pb <- progress_bar$new(format = ":elapsedfull [:bar] :current/:total (:percent)",
+                       total = (ncol(data_train) - 1))
+
+mtry.list <- c()
+data.forest.final <- NULL
+max <- 0
+for (i in 1:(ncol(data_train) - 1)) {
+  data.forest.dummy <- randomForest(
+    Attrition ~ .,
+    data = data_train,
+    ntree = 5000,
+    mtry = i,
+    importance = T,
+    localImp = T
+  )
+  val <- predict(data.forest.dummy, data_test, type = "class")
+  score <- mean(val == data_test$Attrition)
+  if (score >= max) {
+    data.forest.final <- data.forest.dummy
+    max <- score
+  }
+  mtry.list[i] <- score
+  pb$tick()
+}
+
+mtry.list
+#+ fig.width=11, fig.height=8
+plot(mtry.list)
+
+data.forest.final
+#+ fig.width=11, fig.height=8
+plot(data.forest.final)
+```
+
+```{r}
+importance(data.forest.final)
+
+#+ fig.width=11, fig.height=8
+varImpPlot(data.forest.final)
+
+data_test$rf_pred_prob <- predict(data.forest.final, data_test, type="prob")[,2]
+data_test$rf_pred_class <- predict(data.forest.final, data_test)
+
+rf_confMtx <- table(data_test$rf_pred_class, data_test$Attrition)
+confusionMatrix(rf_confMtx)
+```
+
+### SVM
+
+```{R}
+svm_1 <-
+  svm(
+    Attrition ~ .,
+    data = data_train,
+    method = "C-classification",
+    kernal = "radial"
+  )
+
+summary(svm_1)
+```
+
+```{R}
+svm_1_pred <- predict(svm_1, data_test)
+
+xtab_svm_1 <- table(Actual = data_test$Attrition, Predicted = svm_1_pred)
+
+confusionMatrix(xtab_svm_1)
+```
+
+```{R}
+
+svm_tune <-
+  tune.svm(
+    Attrition ~ .,
+    data = data_train,
+    kernel = "radial",
+    cost = 10 ^ (-10:2),
+    gamma = c(seq(1, 10, 4) %o% 10 ^ (-4:1))
+  )
+
+summary(svm_tune)
+
+```
+
+```{R}
+best_svm_mod <- svm_tune$best.model
+
+data_test$svm_pred_class <- predict(best_svm_mod, data_test)
+data_test$svm_dv <- as.numeric(attr(predict(best_svm_mod, data_test, decision.value = TRUE),"decision.values"))
+
+xtab_svm_best <-
+  table(Actual = data_test$Attrition, Predicted = data_test$svm_pred_class)
+
+confusionMatrix(xtab_svm_best)
+```
+
+
+## Evaluation 
+
+```{r}
+ct_roc <- roc(data_test$Attrition, data_test$ct_pred_prob, auc = TRUE)
+rf_roc <- roc(data_test$Attrition, data_test$rf_pred_prob, auc = TRUE)
+svm_roc <- roc(data_test$Attrition, data_test$svm_dv, auc = TRUE)
+
+plot(ct_roc, print.auc = TRUE, col = "blue")
+plot(rf_roc, print.auc = TRUE, print.auc.y = .4, col = "green", add = TRUE)
+plot(svm_roc, print.auc = TRUE, print.auc.y = .3, col = "black", add = TRUE)
+```
