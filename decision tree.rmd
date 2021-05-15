@@ -1,11 +1,14 @@
 ---
 title: "Credit Card Default"
-Author: "Claire Zhao"
+Author: Claire Zhao
 output:
-  word_document:
+  html_document:
     toc: yes
+    df_print: paged
   html_notebook:
     number_sections: yes
+    toc: yes
+  word_document:
     toc: yes
 ---
 #set-up
@@ -29,6 +32,8 @@ library(fastDummies)
 if (!require(tree))
   install.packages('tree')
 library(tree)
+
+library(caret)
 
 ```
 
@@ -128,38 +133,45 @@ print(ct_model)        # model results
 summary(ct_model)      # model result details 
 ```
 
-#train/test split ：我们的sample size是不是只有1400？所以我觉得这里可能有点问题 but i can‘t figure out
+#train/test split 
 ```{r}
+#index <- sample(10000, 2000) # random selection of indices. 20%
+#index
+
 set.seed(1)   # set a random seed 
-index <- sample(10000, 2000) # random selection of indices. 20%
-index
+split <- sample(nrow(data_processed), nrow(data_processed)*0.8)
+
+data_train <- data_processed[split, ]
+data_test <- data_processed[-split, ]
 ```
 
 
-#test & training dataset：这里的varibale being trained我按照之前model写的 不确定！！！！需要铭豪大佬！
+#test & training dataset：这里的varibale being trained
 ```{r}
-test <- data_processed[index,c("Attrition","Age","OverTime_No","MonthlyIncome","JobRole_SalesExecutive","MaritalStatus_Single","YearsSinceLastPromotion","TotalWorkingYears","JobRole_ResearchScientist","StockOptionLevel","JobSatisfaction","RelationshipSatisfaction")]       
+#test <- data_processed[index,c("Attrition","Age","OverTime_No","MonthlyIncome","JobRole_SalesExecutive","MaritalStatus_Single","YearsSinceLastPromotion","TotalWorkingYears","JobRole_ResearchScientist","StockOptionLevel","JobSatisfaction","RelationshipSatisfaction")]       
 # save 20% as a test dataset:index
 
-training <-data_processed[-index,c("Attrition","Age","OverTime_No","MonthlyIncome","JobRole_SalesExecutive","MaritalStatus_Single","YearsSinceLastPromotion","TotalWorkingYears","JobRole_ResearchScientist","StockOptionLevel","JobSatisfaction","RelationshipSatisfaction")]   
+#training <-data_processed[-index,c("Attrition","Age","OverTime_No","MonthlyIncome","JobRole_SalesExecutive","MaritalStatus_Single","YearsSinceLastPromotion","TotalWorkingYears","JobRole_ResearchScientist","StockOptionLevel","JobSatisfaction","RelationshipSatisfaction")]   
 # save the rest as a training set:-index 
+
+
+test <- data_processed[index,]
+training <-data_processed[-index,]
 
 test
 training
-
-
 ```
 
-### build a model with a training set. cp用了0.03
+### build a model with a training set
 ```{r}
 training_model<-rpart(Attrition ~.,
                       data=data_processed, 
                       method="class", 
-                      control=rpart.control(cp=0.03))
+                      control=rpart.control(cp=0))
 
 rpart.plot(training_model)
 ```
-### predicting probabilities/class labels for test data 我这里开始做不下去了所以换了k-fold写
+
 
 ### k-fold Cross-validation，cp用了0
 
@@ -171,6 +183,7 @@ full_tree<-rpart(Attrition~.,
                      control=rpart.control(cp=0))  #cp=0, more complex, let the tree grow
 rpart.plot(full_tree)
 ```
+
 ```{r}
 printcp(full_tree)   # xerror, xstd - cross validation results  
 ```
@@ -194,4 +207,6 @@ test$ct_bp_pred_class=ifelse(test$ct_bp_pred_prob>0.5,"Yes","No")
 table(test$ct_bp_pred_class==test$Attrition)  # error rate
 
 table(test$ct_bp_pred_class,test$Attrition, dnn=c("predicted","actual"))  # confusion table on test data
+table1<-table(test$ct_bp_pred_class,test$Attrition, dnn=c("predicted","actual")) 
+confusionMatrix(table1)
 ```
