@@ -1,0 +1,198 @@
+---
+title: "Credit Card Default"
+Author: "Claire Zhao"
+output:
+  word_document:
+    toc: yes
+  html_notebook:
+    number_sections: yes
+    toc: yes
+---
+
+###### Random Forest #####
+
+#set-up
+```{r}
+library(rmarkdown)
+if (!require(kableExtra)) install.packages("kableExtra")
+library(kableExtra)
+library(knitr)
+library(magrittr)
+
+library(tidyverse)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+
+if (!require(e1071)) install.packages("e1071")
+library(e1071)
+if (!require(fastDummies)) install.packages("fastDummies")
+library(fastDummies)
+
+if (!require(tree))
+  install.packages('tree')
+library(tree)
+```
+
+
+# prepare
+```{r}
+set.seed(1)
+
+if (!require(randomForest))
+  install.packages("randomForest")
+library(randomForest)
+
+if (!require(randomForestExplainer))
+  install.packages("randomForestExplainer")
+library(randomForestExplainer)
+```
+
+# import data
+```{r}
+raw_data <-
+  read.csv(
+    "WA_Fn-UseC_-HR-Employee-Attrition.csv",
+    stringsAsFactors = T,
+    na.strings = '?'
+  )
+names(raw_data)[names(raw_data) == 'ï..Age'] <- 'Age'
+glimpse(raw_data)
+```
+
+
+# prepare& build the tree
+```{r}
+tmp_Attrition <- raw_data$Attrition
+data_droped_col <- subset(raw_data, select = -c(Attrition, EmployeeCount, StandardHours, Over18))
+data_dummied <- dummy_cols(data_droped_col)
+data_processed <-
+  data_dummied[, sapply(data_dummied, class) != "factor"]
+colnames(data_processed) <- gsub(" ", "", colnames(data_processed))
+colnames(data_processed) <- gsub("-", "", colnames(data_processed))
+colnames(data_processed) <- gsub("&", "", colnames(data_processed))
+colnames(data_processed) <- gsub("`", "", colnames(data_processed))
+data_processed$Attrition <- tmp_Attrition
+glimpse(data_processed)
+
+# split sample and test
+train <- sample(1:nrow(data_processed), nrow(data_processed) / 2)
+test <- data_processed[-train,]
+```
+
+# baseline forest
+```{r}
+data.forest <- randomForest(
+ Attrition ~ .,
+  data = data_processed,
+  subset = train,
+  ntree = 5000,
+  importance = T,
+  localImp = T
+)
+data.forest
+plot(data.forest)
+```
+# testing hyper peramiter: mtry
+```{r}
+data.forest <- randomForest(
+  Attrition ~.,
+  data = data_processed,
+  subset = train,
+  ntree = 5000,
+  mtry = ncol(data_processed) - 1,
+  importance = T,
+  localImp = T
+)
+data.forest
+#+ fig.width=11, fig.height=8
+plot(data.forest)
+
+importance(data.forest)
+varImpPlot(data.forest)
+
+data.forest.pred <- predict(data.forest, test, typr = "class")
+table(data.forest.pred, test$Attrition)
+mean(data.forest.pred == test$Attrition)
+
+mtry.list <- c()
+data.forest.final <- NULL
+max <- 0
+for (i in 1:(ncol(data_processed) - 1)) {
+  data.forest.dummy <- randomForest(
+    Attrition ~ .,
+    data = data_processed,
+    subset = train,
+    ntree = 5000,
+    mtry = i,
+    importance = T,
+    localImp = T
+  )
+  val <- predict(data.forest.dummy, test, typr = "class")
+  score <- mean(val == test$Attrition)
+  if (score >= max) {
+    data.forest.final <- data.forest.dummy
+    max <- score
+  }
+  mtry.list[i] <- score
+}
+
+mtry.list
+#+ fig.width=11, fig.height=8
+plot(mtry.list)
+
+data.forest.final
+#+ fig.width=11, fig.height=8
+plot(data.forest.final)
+
+importance(data.forest.final)
+
+#+ fig.width=11, fig.height=8
+varImpPlot(data.forest.final)
+
+data.forest.final.pred <-
+  predict(data.forest.final, test, typr = "class")
+table(data.forest.final.pred, test$Attrition)
+mean(data.forest.final.pred == test$Attrition)
+```
+
+#*****************************************************************************8
+#这里开始是老师的方法
+
+### hold-out validation vs. OOB errors
+Following a similar process, we can validate the performance of a random forest model.  
+```{r}
+set.seed(1)
+rf_training_model<-randomForest(Attrition~.,              # model formula
+                       data=training,          # use a training dataset for building a model
+                       ntree=500,                     
+                       cutoff=c(0.5,0.5), 
+                       mtry=2,
+                       importance=TRUE)
+rf_training_model
+```
+#hyperparameter tuning for Random Forest
+
+```{r}
+# Execute the tuning process
+set.seed(1)              
+res <- tuneRF(x = training%>%select(-Attrition),
+              y = training$Attrition,mtryStart=2,
+              ntreeTry = 500)
+```
+```{r}
+
+rf_best_model<-randomForest(Attrition~.,              # model formula
+                       data=training,          # use a training dataset for building a model
+                       ntree=500,                     
+                       cutoff=c(0.5,0.5), 
+                       mtry=2,
+                       importance=TRUE)
+rf_best_model
+
+test$rf_pred_prob<-predict(rf_best_model,test,type="prob")[,2]   #use a test dataset for model evaluation
+test$rf_pred_class<-predict(rf_best_model,test,type="class")
+glimpse(test)
+
+table(test$Attrition==test$rf_pred_class)    
+```

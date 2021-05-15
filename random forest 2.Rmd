@@ -1,0 +1,136 @@
+---
+title: 'Assignment #4'
+output:
+  word_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+---
+
+# Set-up
+Load packages. 
+```{r}
+getwd()
+rm(list = ls())
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+ithelp <- read_excel("hr.xlsx")
+
+```
+
+
+
+```{r}
+glimpse(ithelp)
+```
+
+A total of 1470 rows. Each row represent an individual request. The data includes:
+
+
+
+```{r}
+summary(ithelp)
+```
+
+Some 'character' variables behave unexpectedly. Let's convert all character variables into factors, which indicate categorical variables in R. 
+
+```{r}
+ithelp<-ithelp%>%
+  mutate(Attrition=as.factor(Attrition),
+         Department=as.factor(Department),
+         EducationField=as.factor(EducationField),
+         Gender=as.factor(Gender),
+         JobRole=as.factor(JobRole),
+         MaritalStatus=as.factor(MaritalStatus),
+         Over18=as.factor(Over18),
+         OverTime=as.factor(OverTime))
+```
+
+Let's check the summary again. 
+```{r}
+summary(ithelp)
+```
+
+
+
+
+# Set up for holdout validation
+Let's select 20% of dataset. Using these indices, we will create a test and a training dataset. 
+```{r}
+set.seed(1)   # set a random seed 
+index <- sample(nrow(ithelp), nrow(ithelp)*0.2) # random selection of indices. 
+test <- ithelp[index,]       # save 20% as a test dataset
+training <-ithelp[-index,]   # save the rest as a training set
+
+```
+
+
+# Tree model
+```{r}
+library(rpart)
+library(rpart.plot)
+```
+
+
+But this time, we will make two changes. 
+1. Instead of the entire dataset for training (ithelp), you will use the training dataset (training). 
+2. Generate a bigger tree with cp=0. Set `control=rpart.control(cp=0)`. 
+
+Save the model as `ct_model`. We will skip plotting the tree. It may crash.  
+```{r}
+ct_model<-rpart(Attrition~Department+EducationField+Gender+JobRole+MaritalStatus+Over18+OverTime,           # model formula
+                data=training,                     # dataset
+                method="class",                   # "class" indicates a classification tree model 
+                control=rpart.control(cp=0))   # tree control parameters. 
+```
+
+Check the cross-validation result using `printcp()`. 
+```{r}
+printcp(ct_model)
+plotcp(ct_model)
+```
+
+Prune the tree using the cp value with the minimum xerror. Save the result as `min_xerror_tree`.  
+```{r}
+min_xerror<-ct_model$cptable[which.min(ct_model$cptable[,"xerror"]),]
+min_xerror
+
+# prune tree with minimum cp value
+min_xerror_tree<-prune(ct_model, cp=min_xerror[1])
+rpart.plot(min_xerror_tree)
+
+```
+
+Apply this model to the test dataset to get the predicted probabilities. 
+```{r}
+bp_tree<-min_xerror_tree
+test$ct_bp_pred_prob<-predict(bp_tree,test)[,2]
+test$ct_bp_pred_class=ifelse(test$ct_bp_pred_prob>0.5,"Yes","No")
+
+table(test$ct_bp_pred_class==test$Attrition)  # error rate
+
+table(test$ct_bp_pred_class,test$Attrition, dnn=c("predicted","actual")) 
+```
+
+Using the 50% cut-off, generate class prediction.  
+```{r}
+library(randomForest)
+set.seed(1)
+rf_training_model<-randomForest(Attrition~Department+EducationField+Gender+JobRole+MaritalStatus+Over18+OverTime,             # model formula
+                       data=training,          # use a training dataset for bu
+                       ntree=500,                     
+                       cutoff=c(0.5,0.5), 
+                       mtry=2,
+                       importance=TRUE)
+rf_training_model
+
+              
+
+```
+
+
+
+
+
+
