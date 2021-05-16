@@ -2,15 +2,15 @@
 title: "Project Notebook"
 author: "Minghao Du"
 output:
-  html_document:
-    toc: yes
-    toc_depth: '2'
-    df_print: paged
   prettydoc::html_pretty:
     highlight: github
     toc: yes
     toc_depth: 2
     theme: architect
+  #   toc: yes
+  #   toc_depth: '2'
+  #   df_print: paged
+  # html_document:
   '# prettydoc::html_pretty': default
   github_document: default
 ---
