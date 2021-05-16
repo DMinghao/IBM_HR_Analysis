@@ -1,18 +1,16 @@
 ---
-title: "Project Notebook"
-author: "Minghao Du"
+title: "IBM HR Analysis Project Notebook"
+author: "Minghao Du, Mengying Zhao, Wenlu Chen, Haitong Ni, Haoyu Wang"
 output:
-  prettydoc::html_pretty:
-    highlight: github
-    toc: yes
-    toc_depth: 2
-    theme: architect
-  #   toc: yes
-  #   toc_depth: '2'
-  #   df_print: paged
-  # html_document:
-  '# prettydoc::html_pretty': default
-  github_document: default
+  rmdformats::downcute:
+    self_contained: true
+    thumbnails: true
+    lightbox: true
+    gallery: true
+    toc_depth: 3
+    highlight: tango
+params:
+  date: !r Sys.Date()
 ---
 
 ```{css echo=FALSE}
@@ -22,9 +20,20 @@ code{
 }
 ```
 ```{r echo=FALSE}
+    # html_document:
+    #   theme: Superhero 
+    #   toc: true
+    #   toc_float:
+    #     collapsed: false
+    #   toc_depth: 3
+    #   df_print: paged
+    #   code_folding: hide
+    #   keep_md: true
 library(rmarkdown)
 if (!require(kableExtra)) install.packages("kableExtra")
 library(kableExtra)
+if (!require(rmdformats)) install.packages("rmdformats")
+library(rmdformats)
 library(knitr)
 library(magrittr)
 ```
@@ -34,7 +43,7 @@ library(magrittr)
 ### Set-up
 
 Load packages: 
-```{r}
+```{r message=FALSE, warning=FALSE}
 rm(list = ls())
 if (!require(readxl)) install.packages("readxl")
 library(readxl)
@@ -42,6 +51,11 @@ if (!require(tidyverse)) install.packages("tidyverse")
 library(tidyverse)
 if (!require(ggplot2)) install.packages("ggplot2")
 library(ggplot2)
+# theme_set(theme_classic())
+theme_set(theme_bw())
+if (!require(ggExtra)) install.packages("ggExtra")
+library(ggExtra)
+
 
 if (!require(e1071)) install.packages("e1071")
 library(e1071)
@@ -116,6 +130,54 @@ data_test <- data_processed[-split,]
 
 ### Understanding the data 
 
+#### Histograms
+```{r}
+raw_data %>%
+  ggplot(aes(x = Attrition)) +
+  geom_bar()
+
+raw_data %>%
+  ggplot(aes(x = Age)) +
+  geom_histogram(binwidth = 10, aes(fill = Attrition))
+
+raw_data %>%
+  ggplot(aes(x = MonthlyIncome)) +
+  geom_histogram(binwidth = 1000, aes(fill = Attrition))
+
+raw_data %>%
+  ggplot(aes(x = OverTime)) +
+  geom_bar(aes(fill = Attrition))
+
+raw_data %>%
+  ggplot(aes(Department)) + 
+  geom_bar(aes(fill = Attrition))
+
+raw_data %>%
+  ggplot(aes(Gender)) + 
+  geom_bar(aes(fill = Attrition))
+```
+
+#### Scatterplot
+```{r message=FALSE, warning=FALSE}
+(
+  raw_data %>%
+    ggplot(aes(MonthlyIncome, Age)) +
+    geom_point(aes(color = Attrition)) +
+    geom_smooth(method = "gam", se = F) + 
+    theme(legend.position = "bottom")
+) %>%
+  ggMarginal(type = "histogram", groupFill = T)
+
+(
+  raw_data %>%
+    ggplot(aes(JobSatisfaction, JobLevel)) +
+    geom_jitter(aes(color = Attrition)) +
+    geom_smooth(method = "gam", se = F) + 
+    theme(legend.position = "bottom")
+) %>%
+  ggMarginal(type = "histogram", groupFill = T)
+```
+
 ## Modeling 
 
 ### Decision Tree
@@ -175,14 +237,15 @@ confusionMatrix(dt_table)
 
 #### baseline forest
 ```{r}
+treeCount <- 1000
+
 data.forest <- randomForest(
   Attrition ~ .,
   data = data_train,
-  ntree = 5000,
+  ntree = treeCount,
   importance = T,
   localImp = T
 )
-data.forest
 plot(data.forest)
 ```
 
@@ -191,7 +254,7 @@ plot(data.forest)
 data.forest <- randomForest(
   Attrition ~ .,
   data = data_train,
-  ntree = 5000,
+  ntree = treeCount,
   mtry = ncol(data_processed) - 1,
   importance = T,
   localImp = T
@@ -223,7 +286,7 @@ for (i in 1:(ncol(data_train) - 1)) {
   data.forest.dummy <- randomForest(
     Attrition ~ .,
     data = data_train,
-    ntree = 5000,
+    ntree = treeCount,
     mtry = i,
     importance = T,
     localImp = T
@@ -258,6 +321,32 @@ data_test$rf_pred_class <- predict(data.forest.final, data_test)
 
 rf_confMtx <- table(data_test$rf_pred_class, data_test$Attrition)
 confusionMatrix(rf_confMtx)
+```
+
+```{r}
+imp <- data.frame(importance(data.forest.final))
+
+imp <- imp[order(-imp$MeanDecreaseAccuracy), ]
+
+impName <- row.names(imp)
+
+impNameComp <- combn(impName[1:5], 2)
+
+apply(impNameComp, MARGIN = 2, FUN = function(i) {
+  plot_predict_interaction(data.forest.final, data_test, i[1], i[2])
+})
+
+```
+
+```{r eval=FALSE, include=FALSE}
+# auto generate random forest model report
+explain_forest(
+  data.forest.final,
+  path = paste0(getwd(), "/HR_Analysis_forest_explained.html"),
+  interactions = TRUE,
+  no_of_pred_plots = 10, 
+  data = data_test
+)
 ```
 
 ### SVM
