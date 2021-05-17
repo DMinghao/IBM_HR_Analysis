@@ -1,6 +1,7 @@
 ---
 title: "IBM HR Analysis Project Notebook"
 author: "Minghao Du, Mengying Zhao, Wenlu Chen, Haitong Ni, Haoyu Wang"
+date: "2021-05-16"
 output:
   rmdformats::downcute:
     self_contained: true
@@ -8,12 +9,10 @@ output:
     df_print: paged
     lightbox: true
     gallery: true
-    toc_depth: 3
+    toc_depth: 4
     highlight: tango
     code_folding: "show"
     code_download: true
-params:
-  date: !r Sys.Date()
 ---
 
 ```{css echo=FALSE}
@@ -365,6 +364,7 @@ explain_forest(
 
 ### SVM
 
+#### Base line SVM model 
 ```{R}
 svm_1 <-
   svm(
@@ -385,7 +385,7 @@ xtab_svm_1 <-
 
 confusionMatrix(xtab_svm_1)
 ```
-
+#### Tuning SVM model 
 ```{R}
 
 svm_tune <-
