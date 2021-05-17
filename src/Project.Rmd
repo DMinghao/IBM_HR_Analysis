@@ -5,10 +5,13 @@ output:
   rmdformats::downcute:
     self_contained: true
     thumbnails: true
+    df_print: paged
     lightbox: true
     gallery: true
     toc_depth: 3
     highlight: tango
+    code_folding: "show"
+    code_download: false
 params:
   date: !r Sys.Date()
 ---
@@ -19,7 +22,7 @@ code{
   font-family: 'Fira Code'!important;
 }
 ```
-```{r echo=FALSE}
+```{r include=FALSE}
     # html_document:
     #   theme: Superhero 
     #   toc: true
@@ -159,23 +162,41 @@ raw_data %>%
 
 #### Scatterplot
 ```{r message=FALSE, warning=FALSE}
-(
-  raw_data %>%
-    ggplot(aes(MonthlyIncome, Age)) +
-    geom_point(aes(color = Attrition)) +
-    geom_smooth(method = "gam", se = F) + 
-    theme(legend.position = "bottom")
-) %>%
-  ggMarginal(type = "histogram", groupFill = T)
 
-(
-  raw_data %>%
-    ggplot(aes(JobSatisfaction, JobLevel)) +
-    geom_jitter(aes(color = Attrition)) +
-    geom_smooth(method = "gam", se = F) + 
-    theme(legend.position = "bottom")
-) %>%
-  ggMarginal(type = "histogram", groupFill = T)
+incomeAge <- raw_data %>%
+  ggplot(aes(MonthlyIncome, Age)) +
+  geom_point(aes(color = Attrition)) +
+  geom_smooth(method = "gam", se = F) +
+  theme(legend.position = "bottom")
+incomeAge %>%  ggMarginal(type = "histogram", groupFill = T)
+
+# (
+#   raw_data %>%
+#     ggplot(aes(JobSatisfaction, JobLevel)) +
+#     geom_jitter(aes(color = Attrition)) +
+#     geom_smooth(method = "gam", se = F) + 
+#     theme(legend.position = "bottom")
+# ) %>%
+#   ggMarginal(type = "histogram", groupFill = T)
+```
+
+```{r message=FALSE, warning=FALSE}
+
+workyear <- raw_data %>%
+  ggplot(aes(TotalWorkingYears, YearsAtCompany)) +
+  geom_point(aes(color = Attrition)) +
+  geom_smooth(method = "gam", se = F) +
+  theme(legend.position = "bottom")
+workyear %>%  ggMarginal(type = "histogram", groupFill = T)
+
+# (
+#   raw_data %>%
+#     ggplot(aes(JobSatisfaction, JobLevel)) +
+#     geom_jitter(aes(color = Attrition)) +
+#     geom_smooth(method = "gam", se = F) + 
+#     theme(legend.position = "bottom")
+# ) %>%
+#   ggMarginal(type = "histogram", groupFill = T)
 ```
 
 ## Modeling 
@@ -264,8 +285,8 @@ data.forest
 plot(data.forest)
 ```
 
-```{r}
-importance(data.forest)
+```{r fig.height=10, fig.width=10}
+data.frame(importance(data.forest))
 varImpPlot(data.forest)
 ```
 
@@ -275,6 +296,7 @@ rf_confMtx <- table(data.forest.pred, data_test$Attrition)
 confusionMatrix(rf_confMtx)
 ```
 
+#### Brute force search for best mtry
 ```{r}
 pb <- progress_bar$new(format = ":elapsedfull [:bar] :current/:total (:percent)",
                        total = (ncol(data_train) - 1))
@@ -301,19 +323,15 @@ for (i in 1:(ncol(data_train) - 1)) {
   pb$tick()
 }
 
-mtry.list
-#+ fig.width=11, fig.height=8
 plot(mtry.list)
 
 data.forest.final
-#+ fig.width=11, fig.height=8
 plot(data.forest.final)
 ```
 
-```{r}
-importance(data.forest.final)
+```{r fig.height=10, fig.width=10}
+data.frame(importance(data.forest.final))
 
-#+ fig.width=11, fig.height=8
 varImpPlot(data.forest.final)
 
 data_test$rf_pred_prob <- predict(data.forest.final, data_test, type="prob")[,2]
@@ -323,7 +341,11 @@ rf_confMtx <- table(data_test$rf_pred_class, data_test$Attrition)
 confusionMatrix(rf_confMtx)
 ```
 
-```{r}
+
+#### Plot forest predict 
+
+Plotting the best forest's predictions in associate with top 5 most important independent variables
+```{r message=FALSE, warning=FALSE}
 imp <- data.frame(importance(data.forest.final))
 
 imp <- imp[order(-imp$MeanDecreaseAccuracy), ]
@@ -378,12 +400,11 @@ svm_tune <-
     Attrition ~ .,
     data = data_train,
     kernel = "radial",
-    cost = 10 ^ (-10:2),
+    cost = 10 ^ (-5:4),
     gamma = c(seq(1, 10, 4) %o% 10 ^ (-4:1))
   )
 
-summary(svm_tune)
-
+svm_tune$performances
 ```
 
 ```{R}
@@ -401,7 +422,23 @@ confusionMatrix(xtab_svm_best)
 
 ## Evaluation 
 
+### Decision Tree
 ```{r}
+confusionMatrix(dt_table)
+```
+
+### Random Forest 
+```{r}
+confusionMatrix(rf_confMtx)
+```
+
+### SVM
+```{r}
+confusionMatrix(xtab_svm_best)
+```
+
+### ROC & AUC
+```{r message=FALSE, warning=FALSE}
 ct_roc <- roc(data_test$Attrition, data_test$ct_pred_prob, auc = TRUE)
 rf_roc <- roc(data_test$Attrition, data_test$rf_pred_prob, auc = TRUE)
 svm_roc <- roc(data_test$Attrition, data_test$svm_dv, auc = TRUE)
