@@ -1,0 +1,555 @@
+---
+title: "IBM HR Analysis Project Notebook"
+author: "Minghao Du, Mengying Zhao, Wenlu Chen, Haitong Ni, Haoyu Wang"
+date: "2021-05-16"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    thumbnails: false
+    df_print: paged
+    lightbox: true
+    gallery: true
+    toc_depth: 4
+    highlight: tango
+    code_folding: "show"
+    code_download: true
+---
+
+```{css echo=FALSE}
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&display=swap');
+code{
+  font-family: 'Fira Code'!important;
+}
+```
+```{r include=FALSE}
+library(rmarkdown)
+if (!require(kableExtra)) install.packages("kableExtra")
+library(kableExtra)
+if (!require(rmdformats)) install.packages("rmdformats")
+library(rmdformats)
+library(knitr)
+library(magrittr)
+```
+
+## Intro
+
+------
+
+### Business Understanding
+
+High attrition can cause many huge, serious problems within an organization. In addition to the unavoidable cost of training and other expenses of new employees, the company must also bear a lot of risks, for example, the sudden departure of employees will result in the interrupted of executing tasks, and the company's operating efficiency will be greatly reduced. All of these will have a negative impact on the company's future development. 
+
+
+In most cases, continuous evaluation of employees’ work can yield a lot of different data and variables. In this case, our target variable is attrition. Employee resignation is composed of many factors. In order to reduce the number of Employee resignation, thereby reducing the risks and costs caused by it, and improving the company’s operational efficiency, we need to find out the factors that are highly relevant to employee attrition. Through analyze many data characteristics, such as "Education field", "Distance from home", "Job role", "Job satisfaction", "Work-life balance", and so forth, the goal could be obtained. This can help the company better planning and developing solutions to reduce the possibility of employee attrition. For example, if resignation is related to low salary, the company could actively adjust salaries to retain good-performing employees.
+
+
+Since the important factors affecting attrition have not been defined at the beginning, we do not predict and formulate optimization plans to reduce employee attrition in the initial stage. Instead, we with obtain effective information through data mining, and finally propose recommendations and plans combined with its results.
+
+### Set-up
+
+Load packages: 
+```{r message=FALSE, warning=FALSE}
+if (!require(readxl)) install.packages("readxl")
+library(readxl)
+if (!require(tidyverse)) install.packages("tidyverse")
+library(tidyverse)
+if (!require(ggplot2)) install.packages("ggplot2")
+library(ggplot2)
+# theme_set(theme_classic())
+theme_set(theme_bw())
+if (!require(ggExtra)) install.packages("ggExtra")
+library(ggExtra)
+
+
+if (!require(e1071)) install.packages("e1071")
+library(e1071)
+if (!require(fastDummies)) install.packages("fastDummies")
+library(fastDummies)
+if (!require(caret)) install.packages("caret")
+library(caret)
+if (!require(tree)) install.packages('tree')
+library(tree)
+if (!require(rpart)) install.packages('rpart')
+library(rpart)
+library(rpart.plot)
+if (!require(progress)) install.packages("progress")
+library(progress)
+if (!require(randomForest)) install.packages("randomForest")
+library(randomForest)
+if (!require(randomForestExplainer)) install.packages("randomForestExplainer")
+library(randomForestExplainer)
+if (!require(pROC)) install.packages('pROC')
+library(pROC)
+```
+
+### Import Data
+
+The data used to address our business problem was retrieved from Kaggle: IBM HR Analytics Employee Attrition & Performance.
+[Kaggle IBM HR Data](https://www.kaggle.com/pavansubhasht/ibm-hr-analytics-attrition-dataset)
+
+
+```{R}
+raw_data <-
+  read.csv(
+    "../data/WA_Fn-UseC_-HR-Employee-Attrition.csv",
+    stringsAsFactors = T,
+    na.strings = '?'
+  )
+
+names(raw_data)[names(raw_data) == 'ï..Age'] <- 'Age'
+
+glimpse(raw_data)
+```
+
+### Preprocess the data 
+
+By looking at the problem we need to solve and observing the data set features, this is a classification problem. The training data set includes 35 variables (columns) and 1470 rows. The variables “Attrition” is our target variable, it means that whether the employee resigned or not. We first focus on sort out the useful variables. After the initial observation, the variables “Employee Count”, “Standard Hours”, “Over 18” have the same answer in the data set. For example, the results in whether employees are over 18 in the company are all “Yes”. Therefore, these three variables are meaningless, we need to drop them at the very beginning of the data preparation.
+
+
+```{R}
+
+tmp_Attrition <- raw_data$Attrition
+
+data_droped_col <-
+  subset(raw_data,
+         select = -c(Attrition, EmployeeCount, StandardHours, Over18))
+
+data_dummied <- dummy_cols(data_droped_col)
+
+data_processed <-
+  data_dummied[, sapply(data_dummied, class) != "factor"]
+
+colnames(data_processed) <- gsub(" ", "", colnames(data_processed))
+colnames(data_processed) <- gsub("-", "", colnames(data_processed))
+colnames(data_processed) <- gsub("&", "", colnames(data_processed))
+colnames(data_processed) <- gsub("`", "", colnames(data_processed))
+
+data_processed$Attrition <- tmp_Attrition
+
+glimpse(data_processed)
+```
+
+
+By observing the characteristics of the data, some variables cannot be quantitatively processed. In order to quantify those variables, to better analyze the data, we created some dummy variables. Split the variables of a certain category, for instance, setting "Gender" to two dummy variables "Gender_Male" and "Gender_Female". After applying the dummy variables and cleaning the data, we have prepared the initial data with 53 columns that can be used for initial prediction and put into the model for further analysis. 
+
+
+```{R}
+set.seed(10)
+
+split <- sample(nrow(data_processed), nrow(data_processed) * 0.75)
+
+data_train <- data_processed[split,]
+data_test <- data_processed[-split,]
+
+```
+
+### Understanding the data 
+
+To better understand the data set, we plot several histograms for the raw data. Our target variable contains more than 1200 “No” and around 220 “Yes”, which means around 15% of our data set was Attrition.
+
+```{r}
+raw_data %>%
+  ggplot(aes(x = Attrition)) +
+  geom_bar()
+```
+
+The histogram between Attrition and Age demonstrates that the most of employees are in their 25-35; 25-35 years-old has the largest number of Attrition as well as Not Attrition.
+
+```{r}
+raw_data %>%
+  ggplot(aes(x = Age)) +
+  geom_histogram(binwidth = 10, aes(fill = Attrition))
+```
+
+We plot the histogram for Monthly Income and Attrition number. The $1000-$2000 level contains the highest number of Attrition, while almost no Attrition since the Monthly Income reached $15000.
+
+```{r}
+raw_data %>%
+  ggplot(aes(x = MonthlyIncome)) +
+  geom_histogram(binwidth = 1000, aes(fill = Attrition))
+```
+
+The bar chart between Over Time and Attrition displays the relatively equal number of Over Time in both columns. The Over Time is higher in “Yes” column than “No”, which indicates that the extra working time might increase the Attrition. 
+
+```{r}
+raw_data %>%
+  ggplot(aes(x = OverTime)) +
+  geom_bar(aes(fill = Attrition))
+```
+
+The bar chart displays that the Research & Development has the greatest number of employees, Sales has the second greatest number of employees. Also, Research & Development contains the greatest number of Attrition, Sales has the highest has the second greatest number of Attrition.
+
+```{r}
+raw_data %>%
+  ggplot(aes(Department)) + 
+  geom_bar(aes(fill = Attrition))
+```
+
+The number of male employees is larger than female employees, while the number of Attrition for male employees is more than female’s Attrition.
+
+```{r}
+raw_data %>%
+  ggplot(aes(Gender)) + 
+  geom_bar(aes(fill = Attrition))
+```
+
+The scatterplot between the Monthly Income and Age illustrates that employee who has lower monthly income and younger age are more likely to be Attrition. On the other hand, we do have more dense data in the lower monthly income and younger age, and sparse data distribution higher monthly income and older age, which might bring influence on the prediction. 
+
+```{r message=FALSE, warning=FALSE}
+
+incomeAge <- raw_data %>%
+  ggplot(aes(MonthlyIncome, Age)) +
+  geom_point(aes(color = Attrition)) +
+  geom_smooth(method = "gam", se = F) +
+  theme(legend.position = "bottom")
+incomeAge %>%  ggMarginal(type = "histogram", groupFill = T)
+
+```
+
+The scatterplot between the Total Working Years and Years at Company reveals that employee who has less Total Working Years and less Years at Company are more likely to be Attrition. However, we do have more dense data in less Total Working Years and less Years at Company, and more sparse data distribution higher Total Working Years and higher Years at Company, which might also impact the prediction.
+
+```{r message=FALSE, warning=FALSE}
+
+workyear <- raw_data %>%
+  ggplot(aes(TotalWorkingYears, YearsAtCompany)) +
+  geom_point(aes(color = Attrition)) +
+  geom_smooth(method = "gam", se = F) +
+  theme(legend.position = "bottom")
+workyear %>%  ggMarginal(type = "histogram", groupFill = T)
+
+```
+
+
+## Modeling 
+
+------
+
+### Decision Tree
+
+Ross proposed the concept of decision trees in the 19th century. Although decision trees are relatively simple models, they are highly interpretable. The decision tree represents a certain mapping between object attributes and object values. It includes nodes and roots. The nodes in the decision tree represent samples, internal nodes represent elements or attributes, and leaf nodes represent classes.
+
+#### build a model with a training set
+```{r}
+training_model <- rpart(Attrition ~ .,
+                        data = data_train,
+                        method = "class")
+
+rpart.plot(training_model)
+```
+
+```{r}
+dt_table <-
+  table(
+    ifelse(predict(training_model, data_test)[, 2] > 0.5 , "Yes", "No"),
+    data_test$Attrition,
+    dnn = c("predicted", "actual")
+  )
+confusionMatrix(dt_table)
+```
+
+#### k-fold Cross-validation，cp with 0
+
+```{r}
+full_tree <- rpart(
+  Attrition ~ .,
+  data = data_train,
+  method = "class",
+  control = rpart.control(cp = 0) #cp=0, more complex, let the tree grow
+)  
+rpart.plot(full_tree)
+```
+
+```{r}
+printcp(full_tree)   # xerror, xstd - cross validation results  
+```
+
+```{r}
+plotcp(full_tree)    
+```
+
+```{r}
+min_xerror <-
+  full_tree$cptable[which.min(full_tree$cptable[, "xerror"]), ]
+min_xerror
+
+# prune tree with minimum cp value
+min_xerror_tree <- prune(full_tree, cp = min_xerror[1])
+rpart.plot(min_xerror_tree)
+```
+
+```{r}
+bp_tree <- min_xerror_tree
+data_test$ct_pred_prob <- predict(bp_tree, data_test)[, 2]
+data_test$ct_pred_class <- ifelse(data_test$ct_pred_prob > 0.5, "Yes", "No")
+
+dt_table <-
+  table(data_test$ct_pred_class,
+        data_test$Attrition,
+        dnn = c("predicted", "actual"))
+confusionMatrix(dt_table)
+```
+
+The main goal of our project is to predict which types of employees are more likely to decide attrition and which factors will most affect employees' decision to leave. We decided to build the first model-decision tree to explore the interaction between factors. First, we randomly use half of the data as the training dataset and the other half as the testing dataset. According to the performance of the decision tree we built on the training dataset, we can conclude that monthly income, years with current manager, work life balance, job satisfaction, over time, stock option level environment satisfaction and job role have a greater impact on employee attrition. Specifically, employees with monthly income less than 2805, over time, environment satisfaction less than 3 and work life balance larger than 2 are more likely to make attrition decisions. The accuracy rate for the first decision tree model is 0.8125. After that, we try to limit the characteristics of the decision tree and change some criteria to find the best decision tree to predict our target variable. In this decision tree, we found that monthly income and over time can best represent to predict attrition or not. In detail, employees with monthly income less than 2805 and over time are more likely to choose attrition. Based on the result, we know that our best decision tree model’s accuracy rate is 0.8478, which is higher than our first model. 
+
+
+### Random Forest 
+
+In this dataset, the target is to predict the attrition result of employees under different situations, including hour rate, environment, age, job satisfaction and so many other factors. Random Forest model is effective and flexible by allowing each individual tree to randomly sample from the dataset with replacement, resulting in different trees.  
+
+#### baseline forest
+```{r}
+treeCount <- 1000
+
+data.forest <- randomForest(
+  Attrition ~ .,
+  data = data_train,
+  ntree = treeCount,
+  importance = T,
+  localImp = T
+)
+plot(data.forest)
+```
+
+Each individual tree in the random forest spits out a class prediction and the class with the most votes become our model’s prediction. In this investigation, we have 1470 uncorrelated samples, and we created a validation set by using 75% of samples as our training data and the rest of it as our testing data, which is for the model not overfitting. Firstly, we tested the hyper parameter “mtry” as  shown.
+
+#### testing hyper peramiter: mtry
+```{r}
+data.forest <- randomForest(
+  Attrition ~ .,
+  data = data_train,
+  ntree = treeCount,
+  mtry = ncol(data_processed) - 1,
+  importance = T,
+  localImp = T
+)
+data.forest
+#+ fig.width=11, fig.height=8
+plot(data.forest)
+```
+
+When training data is ready, the (out-of-bag) data is for estimating the classification error as trees, which is also used to get estimates of variable importance.  The OOB estimate of error rate is 14.16%, and the result is unbiased.
+
+```{r fig.height=10, fig.width=10}
+data.frame(importance(data.forest))
+varImpPlot(data.forest)
+```
+
+The feature importance's in a random forest can help us figure out what predictor variables the random forest considers most important. According to our test, there are 11 relevant variables that are critical to our target, including: OverTime_No, MonthlyIncome, Age, JobRole, Marital_Status, YearsSinceLastPromotion, TotalWorkingaYea.
+
+```{r}
+data.forest.pred <- predict(data.forest, data_test, typr = "class")
+rf_confMtx <-
+  table(data.forest.pred,
+        data_test$Attrition,
+        dnn = c("predicted", "actual"))
+confusionMatrix(rf_confMtx)
+```
+
+#### Brute force search for best mtry
+```{r}
+pb <- progress_bar$new(format = ":elapsedfull [:bar] :current/:total (:percent)",
+                       total = (ncol(data_train) - 1))
+
+mtry.list <- c()
+data.forest.final <- NULL
+max <- 0
+for (i in 1:(ncol(data_train) - 1)) {
+  data.forest.dummy <- randomForest(
+    Attrition ~ .,
+    data = data_train,
+    ntree = treeCount,
+    mtry = i,
+    importance = T,
+    localImp = T
+  )
+  val <- predict(data.forest.dummy, data_test, type = "class")
+  score <- mean(val == data_test$Attrition)
+  if (score >= max) {
+    data.forest.final <- data.forest.dummy
+    max <- score
+  }
+  mtry.list[i] <- score
+  pb$tick()
+}
+
+plot(mtry.list)
+
+data.forest.final
+plot(data.forest.final)
+```
+
+Then, we used Brute-force search for best mtry, and we have obtained that mtry equals to 2 through this method. In general, Brute-force search is useful as a baseline method when benchmarking other algorithms or metaheuristics. Since our dataset has limited samples, we can use this method efficiently to get results.
+
+```{r fig.height=10, fig.width=10}
+data.frame(importance(data.forest.final))
+
+varImpPlot(data.forest.final)
+
+data_test$rf_pred_prob <-
+  predict(data.forest.final, data_test, type = "prob")[, 2]
+data_test$rf_pred_class <- predict(data.forest.final, data_test)
+
+rf_confMtx <-
+  table(data_test$rf_pred_class,
+        data_test$Attrition,
+        dnn = c("predicted", "actual"))
+confusionMatrix(rf_confMtx)
+```
+
+According to our model, another diagnostic measure of the model we can take is to plot the confusion matrix for the testing predictions. We can see in the model that, based on predictions, how many got correct in the top left and bottom right corners and how many were missed in the lower left and upper right. In summary, the accuracy rate of our random forest model is 0.8777, which outperforms the single decision tree.
+
+```{r eval=FALSE, include=FALSE}
+# auto generate random forest model report
+explain_forest(
+  data.forest.final,
+  path = paste0(getwd(), "/HR_Analysis_forest_explained.html"),
+  interactions = TRUE,
+  no_of_pred_plots = 10, 
+  data = data_test
+)
+```
+
+### SVM
+
+The Support Vector Machine (SVM) model is a supervised machine learning model that can classify two (or more) factors target variable depending on the choice of kernels. In our case, the processed data presents 52 independent variables and one target variable (Attrition); thus, while fitting to the training data, the SVM model will generate the best hyperplane (with highest margin between vectors in different groups) in a 53-dimensional space. 
+
+#### Base line SVM model 
+```{R}
+svm_1 <-
+  svm(
+    Attrition ~ .,
+    data = data_train,
+    method = "C-classification",
+    kernal = "radial"
+  )
+
+summary(svm_1)
+```
+
+For the first attempt we passed all training data to a SVM model with a radial kernel. We then apply the model to the preserved testing data to generate a set of predicted Attrition values. This predicted attrition value is used to compare with the actual attrition value in the testing data to calculate the accuracy value. 
+
+```{R}
+svm_1_pred <- predict(svm_1, data_test)
+
+xtab_svm_1 <-
+  table(svm_1_pred, data_test$Attrition, dnn = c("predicted", "actual"))
+
+confusionMatrix(xtab_svm_1)
+```
+#### Tuning SVM model 
+
+Given the radial kernel is sensitive to cost and gamma (hyperparameter), the model might benefit from fine tuning with high resolution hyperparameters. Hence, for cost, we prepared a sequence ranging from 1e-5 to 1e4 with 10x increment, and for gamma, we prepared a sequence ranging from 1e-4 to 10 with 5x increment. Applying the combination of these two hyperparameters, the best SVM model shall select from 180 candidate models. As a result, the outputted best SVM model is tuned with cost of 100 and gamma of 5e-4. 
+
+```{R}
+
+svm_tune <-
+  tune.svm(
+    Attrition ~ .,
+    data = data_train,
+    kernel = "radial",
+    cost = 10 ^ (-5:4),
+    gamma = c(seq(1, 10, 4) %o% 10 ^ (-4:1))
+  )
+
+svm_tune$performances
+```
+
+Applying the tuned model to the preserved testing data set, a set of predicted attrition value is generated. These predicted values are then checked against the original ones to calculate the accuracy of the model.
+
+```{R}
+best_svm_mod <- svm_tune$best.model
+
+data_test$svm_pred_class <- predict(best_svm_mod, data_test)
+data_test$svm_dv <-
+  as.numeric(attr(
+    predict(best_svm_mod, data_test, decision.value = TRUE),
+    "decision.values"
+  ))
+
+xtab_svm_best <-
+  table(data_test$svm_pred_class,
+        data_test$Attrition,
+        dnn = c("predicted", "actual"))
+
+confusionMatrix(xtab_svm_best)
+```
+
+As the result shown, after tuning the model a slight increase of accuracy is emerged. On the other hand, while comparing the balanced accuracy of both models, the improvement is significant. As the matter of utilizing the model, both are equally good. 
+
+## Evaluation 
+
+------
+
+At this point, all three models had built, tuned, and tested against the preserved testing data set. 
+
+### Decision Tree
+```{r}
+confusionMatrix(dt_table)
+```
+
+### Random Forest 
+```{r}
+confusionMatrix(rf_confMtx)
+```
+
+### SVM
+```{r}
+confusionMatrix(xtab_svm_best)
+```
+
+As shown above, we can say that the SVM model has the highest accuracy rate, which arrives at 91%. The random forest model has the second highest accuracy rate, and the decision tree model has the lowest accuracy rate. AUC is also an important fact to show how our model performs in the testing dataset. Based on the ROC plot below, it shows AUC values among three different models. Black line represents SVM model performance and green line represents random forest model and blue line represents decision tree model performance. We can clearly say that the random forest and SVM model’s performance are much better than the decision tree model. Compared with the random forest model, although at some point, the random forest model has higher sensitivity, overall, the SVM model has higher AUC value (0.835). Therefore, our group thinks the SVM model is the best model we created. 
+
+### ROC & AUC
+```{r message=FALSE, warning=FALSE}
+ct_roc <- roc(data_test$Attrition, data_test$ct_pred_prob, auc = TRUE)
+rf_roc <- roc(data_test$Attrition, data_test$rf_pred_prob, auc = TRUE)
+svm_roc <- roc(data_test$Attrition, data_test$svm_dv, auc = TRUE)
+
+plot(ct_roc, print.auc = TRUE, col = "blue")
+plot(rf_roc, print.auc = TRUE, print.auc.y = .4, col = "green", add = TRUE)
+plot(svm_roc, print.auc = TRUE, print.auc.y = .3, col = "black", add = TRUE)
+```
+
+From a practical standpoint, both SVM and random forest are equally good in terms of predicting employee attrition. However, when it comes to formulating plans to decrease attrition rate, random forest provides more relevant information like variable importance and prediction visualizations. Hence, depending on the application, both model offers different perks for different aspect of the problem that the firm is facing. 
+
+## Deployment & Conclusion
+
+------
+
+According to the above evaluation, Random Forest and SVM perform better in these three models, so the next we will conduct further analysis based on Random Forest.
+
+Based on the results of the random forest above, there are 11 variables in total that are significant relative to the attrition. We choose the first four variables since they might be the most important to decide whether employee resign or not. They are “Overtime”, “Monthly income”, “Age” and “Total working years”. 
+
+### Plot forest predict 
+
+```{r message=FALSE, warning=FALSE}
+imp <- data.frame(importance(data.forest.final))
+
+imp <- imp[order(-imp$MeanDecreaseAccuracy), ]
+
+impName <- row.names(imp)
+
+impNameComp <- combn(impName[1:5], 2)
+
+plots <- apply(impNameComp, MARGIN = 2, FUN = function(i) {
+  plot_predict_interaction(data.forest.final, data_test, i[1], i[2])
+})
+
+invisible(capture.output(print(plots)))
+```
+
+Among all the four factors, the most significant variable that led to employee attrition is overtime. By observing the chart, it can be found that the higher the overtime, the greater the possibility of employees leaving. And through analysis, under the premise of high overtime rate, employees whose monthly salary is less than approximately 2500 dollars, the age is less than 30, and the total working year is less than 5 years are more likely to leave. But in general, high overtime rates will increase attrition. Therefore, in view of this feature, the company can consider reducing the number of overtime work. For overtime that cannot be avoided, the company can conduct further investigations internally to summarize how employees can reduce negative emotions under the overtime circumstances, such as adding additional work allowances or benefits to overtime employees and so on. Using these to balance the extra overtime that employees pay. Through such incentive arrangements, it is expected that the negative impact of overtime can be minimized, thereby reducing the possibility of employees leaving due to it.
+
+Through continued analysis, it can be found that when the monthly income is lower than 2500 dollars, no matter how long the employee’s working experience, the probability of leaving the job is very high. Compared with older employees, young people who aged lower than 27 are relatively more likely to resign under low wages. According to this, the company may have to reconsider the issue of salary setting, such as raising the minimum salary, which needs to be in line with the current talent market conditions. In this way, employees will not leave their jobs because of salary, when they receive a salary that is equal to the value of their work.
+
+The last two important factors that affect the company’s departure are age and total working years. There is a positive correlation between these two factors, that is, the younger the age, the shorter total working years. Therefore, these two factors are combined as a reason for the impact of resignation. We found that employees who are younger and have a shorter total working years are more likely to quit the job. It can be presumed from this result that because young people have not worked for a long time in the company, and some may even be the new employees, they are very positive about the future development and have high expectations for the company. However, if employees have a certain distance between their expectations and reality of the company, they will feel a sense of gap and worry about their current work and job prospects. Therefore, companies should provide employees with more realistic work information, including remuneration, working environment, conditions, etc., to ensure that employees form appropriate expectations. Then the attrition might decrease after applying this suggestion.
+
+### Improvements 
+
+However, there are still several problems with the above suggestions. For example, the collected past data might be biased. Resigned employees usually avoid telling the real reason for their resignation, as well as the dissatisfaction with the company. It does more harm than good to them. Therefore, the solutions we propose may not be able to neutralize the problems of which caused by the actual reason leads to resignation. At the same time, since the resignation is a very subjective matter, it is usually not determined solely by these factors, so the company should keep tracking the resigned employees, in order to get a better prediction in the future.
+
+And our model has many aspects that can be improved. For example, we didn’t apply the horizontal comparison of each of our models, and the same model does not have a compare of different kernels, which will bring about different performance and a comparison with accuracy. In addition, the current highest accuracy rate of our model is 91%, which could be further optimized. At present, we have selected only three models, but there are many other models such as neural network that are not used, there might be better results in these other models.
+
+### Conclusion 
+
+In conclusion, coming from a problem-solving perspective, the project had followed appropriate data analysis procedure. Thus, regardless of the imperfection of the current model, it is sufficient, in terms of both accuracy and variable evaluation, to formulate an effective plan to address the rising business problem. On the other hand, taking a closer look at the current model and the solution of which it derived, the team thinks that it would nor be cost effective to further improve the model since the diminishing return on increase of accuracy will not provide better insight into those independent variables. Therefore, even though there might be rooms to better existing models, the firm might be more beneficial from executing the recommending solution. 
