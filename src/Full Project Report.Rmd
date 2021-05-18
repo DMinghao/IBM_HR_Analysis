@@ -161,7 +161,7 @@ raw_data %>%
   geom_histogram(binwidth = 10, aes(fill = Attrition))
 ```
 
-We plot the histogram for Monthly Income and Attrition number. The $1000-$2000 level contains the highest number of Attrition, while almost no Attrition since the Monthly Income reached $15000.
+We plot the histogram for Monthly Income and Attrition number. The $1000-$2000 level contains the highest number of Attrition, but almost no Attrition since the Monthly Income reached $15000.
 
 ```{r}
 raw_data %>%
@@ -169,7 +169,7 @@ raw_data %>%
   geom_histogram(binwidth = 1000, aes(fill = Attrition))
 ```
 
-The bar chart between Over Time and Attrition displays the relatively equal number of Over Time in both columns. The Over Time is higher in “Yes” column than “No”, which indicates that the extra working time might increase the Attrition. 
+The bar chart between Over Time and Attrition displays higher Over Time in “Yes” column than “No”, which indicates that the extra working time might increase the Attrition. 
 
 ```{r}
 raw_data %>%
