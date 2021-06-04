@@ -1,3 +1,3 @@
-# IBM_HR_Analysis
+# Attrition Analysis with R
 
-hi
+Checkout our [report](https://dminghao.github.io/IBM_HR_Analysis/)
