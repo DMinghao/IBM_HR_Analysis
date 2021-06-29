@@ -59,6 +59,8 @@ library(ggplot2)
 theme_set(theme_bw())
 if (!require(ggExtra)) install.packages("ggExtra")
 library(ggExtra)
+if (!require(plotly)) install.packages("plotly")
+library(plotly)
 
 
 if (!require(e1071)) install.packages("e1071")
@@ -148,49 +150,61 @@ data_test <- data_processed[-split,]
 To better understand the data set, we plot several histograms for the raw data. Our target variable contains more than 1200 “No” and around 220 “Yes”, which means around 15% of our data set was Attrition.
 
 ```{r}
-raw_data %>%
-  ggplot(aes(x = Attrition)) +
+p <- raw_data %>%
+  ggplot(aes(x = Attrition, fill = Attrition)) +
   geom_bar()
+
+p %>% ggplotly()
 ```
 
 The histogram between Attrition and Age demonstrates that the most of employees are in their 25-35; 25-35 years-old has the largest number of Attrition as well as Not Attrition.
 
 ```{r}
-raw_data %>%
+p <- raw_data %>%
   ggplot(aes(x = Age)) +
   geom_histogram(binwidth = 10, aes(fill = Attrition))
+
+p %>% ggplotly()
 ```
 
 We plot the histogram for Monthly Income and Attrition number. The $1000-$2000 level contains the highest number of Attrition, but almost no Attrition since the Monthly Income reached $15000.
 
 ```{r}
-raw_data %>%
+p <- raw_data %>%
   ggplot(aes(x = MonthlyIncome)) +
   geom_histogram(binwidth = 1000, aes(fill = Attrition))
+
+p %>% ggplotly()
 ```
 
 The bar chart between Over Time and Attrition displays higher Over Time in “Yes” column than “No”, which indicates that the extra working time might increase the Attrition. 
 
 ```{r}
-raw_data %>%
+p <- raw_data %>%
   ggplot(aes(x = OverTime)) +
   geom_bar(aes(fill = Attrition))
+
+p %>% ggplotly()
 ```
 
 The bar chart displays that the Research & Development has the greatest number of employees, Sales has the second greatest number of employees. Also, Research & Development contains the greatest number of Attrition, Sales has the highest has the second greatest number of Attrition.
 
 ```{r}
-raw_data %>%
+p<- raw_data %>%
   ggplot(aes(Department)) + 
   geom_bar(aes(fill = Attrition))
+
+p %>% ggplotly()
 ```
 
 The number of male employees is larger than female employees, while the number of Attrition for male employees is more than female’s Attrition.
 
 ```{r}
-raw_data %>%
+p <- raw_data %>%
   ggplot(aes(Gender)) + 
   geom_bar(aes(fill = Attrition))
+
+p %>% ggplotly()
 ```
 
 The scatterplot between the Monthly Income and Age illustrates that employee who has lower monthly income and younger age are more likely to be Attrition. On the other hand, we do have more dense data in the lower monthly income and younger age, and sparse data distribution higher monthly income and older age, which might bring influence on the prediction. 
@@ -202,6 +216,9 @@ incomeAge <- raw_data %>%
   geom_point(aes(color = Attrition)) +
   geom_smooth(method = "gam", se = F) +
   theme(legend.position = "bottom")
+
+incomeAge %>% ggplotly()
+
 incomeAge %>%  ggMarginal(type = "histogram", groupFill = T)
 
 ```
@@ -215,6 +232,9 @@ workyear <- raw_data %>%
   geom_point(aes(color = Attrition)) +
   geom_smooth(method = "gam", se = F) +
   theme(legend.position = "bottom")
+
+workyear %>% ggplotly()
+
 workyear %>%  ggMarginal(type = "histogram", groupFill = T)
 
 ```
@@ -264,7 +284,7 @@ printcp(full_tree)   # xerror, xstd - cross validation results
 ```
 
 ```{r}
-plotcp(full_tree)    
+plotcp(full_tree) 
 ```
 
 ```{r}
@@ -307,7 +327,7 @@ data.forest <- randomForest(
   importance = T,
   localImp = T
 )
-plot(data.forest)
+function() plot(data.forest) %>% as.grob()
 ```
 
 Each individual tree in the random forest spits out a class prediction and the class with the most votes become our model’s prediction. In this investigation, we have 1470 uncorrelated samples, and we created a validation set by using 75% of samples as our training data and the rest of it as our testing data, which is for the model not overfitting. Firstly, we tested the hyper parameter “mtry” as  shown.
@@ -372,7 +392,8 @@ for (i in 1:(ncol(data_train) - 1)) {
   pb$tick()
 }
 
-plot(mtry.list)
+p <- ggplot() + geom_point(aes(x = seq(1, length(mtry.list)), y = mtry.list))
+p %>% ggplotly()
 
 data.forest.final
 plot(data.forest.final)
